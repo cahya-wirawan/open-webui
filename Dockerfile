@@ -13,8 +13,8 @@ ARG USE_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 ARG USE_RERANKING_MODEL=""
 ARG BUILD_HASH=dev-build
 # Override at your own risk - non-root configurations are untested
-ARG UID=0
-ARG GID=0
+ARG UID=11132
+ARG GID=11133
 
 ######## WebUI frontend ########
 FROM --platform=$BUILDPLATFORM node:21-alpine3.19 as build
@@ -30,7 +30,7 @@ ENV APP_BUILD_HASH=${BUILD_HASH}
 RUN npm run build
 
 ######## WebUI backend ########
-FROM python:3.11-slim-bookworm as base
+FROM ubuntu:18.04 as base
 
 # Use args
 ARG USE_CUDA
@@ -82,9 +82,9 @@ ENV HOME /root
 # Create user and group if not root
 RUN if [ $UID -ne 0 ]; then \
     if [ $GID -ne 0 ]; then \
-    addgroup --gid $GID app; \
+    addgroup --gid $GID llm-apps; \
     fi; \
-    adduser --uid $UID --gid $GID --home $HOME --disabled-password --no-create-home app; \
+    adduser --uid $UID --gid $GID --home $HOME --disabled-password --no-create-home llm-apps; \
     fi
 
 RUN mkdir -p $HOME/.cache/chroma
@@ -92,6 +92,20 @@ RUN echo -n 00000000-0000-0000-0000-000000000000 > $HOME/.cache/chroma/telemetry
 
 # Make sure the user has access to the app and root directory
 RUN chown -R $UID:$GID /app $HOME
+
+
+ENV DEBIAN_FRONTEND=noninteractive 
+RUN apt-get update
+RUN apt-get install -y --no-install-recommends make build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm libncurses5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev wget curl
+
+RUN apt-get install -y git
+RUN git clone --depth=1 https://github.com/pyenv/pyenv.git .pyenv
+ENV PYENV_ROOT="/app/backend/.pyenv"
+ENV PATH="${PYENV_ROOT}/shims:${PYENV_ROOT}/bin:${PATH}"
+
+ENV PYTHON_VERSION=3.11.9
+RUN pyenv install ${PYTHON_VERSION}
+RUN pyenv global ${PYTHON_VERSION}
 
 RUN if [ "$USE_OLLAMA" = "true" ]; then \
     apt-get update && \
@@ -148,6 +162,9 @@ COPY --chown=$UID:$GID --from=build /app/package.json /app/package.json
 
 # copy backend files
 COPY --chown=$UID:$GID ./backend .
+
+RUN pip install pysqlite3-binary
+RUN mkdir /app/backend/.pyenv/versions/3.11.9/lib/python3.11/site-packages/google/colab
 
 EXPOSE 8080
 
